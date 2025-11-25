@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>智能话术助手 - 星链资本</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #f3f4f6;
+            height: 100vh; 
+            height: 100dvh; 
+            display: flex;
+            flex-direction: column;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .message-enter { animation: slideUp 0.3s ease-out forwards; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .modal-enter { animation: fadeIn 0.2s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+        .loader { border: 2px solid #f3f3f3; border-top: 2px solid #3498db; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="overflow-hidden text-slate-800">
+
+    <header class="bg-white px-4 py-3 flex justify-between items-center shadow-sm z-40 absolute top-0 left-0 w-full h-[60px]">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white">
+                <i class="fas fa-comment-dots"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg leading-none">智能话术助手</h1>
+                <p id="status-text" onclick="location.reload()" class="text-[10px] text-gray-400 mt-1 cursor-pointer">
+                    <i class="fas fa-circle-notch fa-spin mr-1"></i> 连接中...
+                </p>
+            </div>
+        </div>
+        <div class="flex gap-3 text-lg">
+            <button onclick="openHistory()" class="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center active:scale-95 transition relative"><i class="fas fa-history"></i></button>
+            <button onclick="openLibrary()" class="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center active:scale-95 transition relative"><i class="fas fa-book"></i></button>
+            <button onclick="startNewChat()" class="w-8 h-8 rounded-full bg-green-50 text-green-600 flex items-center justify-center active:scale-95 transition"><i class="fas fa-plus"></i></button>
+        </div>
+    </header>
+
+    <main id="chat-container" class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar bg-[#f3f4f6] w-full absolute top-[60px] bottom-[70px] left-0 right-0 z-0">
+        <div id="empty-state" class="flex flex-col items-center justify-center h-full text-gray-400">
+            <div class="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-500 text-3xl mb-4"><i class="fas fa-robot"></i></div>
+            <h3 class="text-lg font-bold text-gray-700">智能话术助手</h3>
+            <p class="text-xs mb-6">星链资本客户沟通专用</p>
+            <div class="text-xs bg-white px-3 py-1 rounded-full shadow-sm text-gray-500"><i class="fas fa-wifi text-xs mr-1"></i> Supabase 云端同步中</div>
+        </div>
+    </main>
+
+    <footer class="bg-white p-3 pb-safe border-t border-gray-100 z-50 fixed bottom-0 left-0 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <div class="flex items-end gap-2">
+            <button onclick="pasteClipboard()" class="h-10 w-10 mb-[1px] flex-shrink-0 bg-gray-100 text-gray-600 rounded-lg flex flex-col items-center justify-center text-[10px] active:bg-gray-200">
+                <i class="fas fa-paste text-sm mb-[1px]"></i>
+                粘贴
+            </button>
+            <div class="flex-1 bg-gray-100 rounded-xl p-2">
+                <textarea id="user-input" rows="1" class="w-full bg-transparent border-none outline-none text-sm resize-none max-h-24" placeholder="输入客户问题，自动匹配话术..."></textarea>
+            </div>
+            <button onclick="sendMessage()" class="h-10 w-12 mb-[1px] flex-shrink-0 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-lg shadow-blue-200 active:scale-95 transition">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </div>
+    </footer>
+
+    <div id="history-modal" class="fixed inset-0 z-[100] hidden">
+        <div class="absolute inset-0 bg-black/30 backdrop-blur-sm transition-opacity" onclick="closeHistory()"></div>
+        <div class="absolute left-0 top-0 bottom-0 w-3/4 max-w-xs bg-white shadow-2xl flex flex-col transform transition-transform duration-300 -translate-x-full" id="history-panel">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50 h-[60px] shrink-0">
+                <h2 class="font-bold text-lg">历史对话</h2>
+                <button onclick="closeHistory()" class="w-10 h-10 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center active:bg-gray-300 transition z-50"><i class="fas fa-times text-lg"></i></button>
+            </div>
+            <div id="history-list" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
+            <div class="p-4 border-t pb-safe"><button onclick="askClearHistory()" class="w-full py-2 text-red-500 text-sm border border-red-100 rounded-lg hover:bg-red-50">清空所有记录</button></div>
+        </div>
+    </div>
+    
+    <div id="library-modal" class="fixed inset-0 z-[100] hidden flex-col bg-gray-100">
+        <div class="bg-white px-4 py-3 flex justify-between items-center shadow-sm h-[60px] shrink-0">
+            <div class="flex items-center gap-2"><h2 class="font-bold text-lg">话术库</h2><button onclick="syncData()" class="px-2 py-0.5 bg-green-100 text-green-600 text-[10px] rounded-md active:scale-95"><i class="fas fa-sync-alt mr-1"></i>刷新</button></div>
+            <div class="flex gap-3 items-center">
+                <button id="admin-btn" onclick="checkAdmin()" class="text-sm text-blue-600 font-medium px-2 py-1">管理</button>
+                <button onclick="closeLibrary()" class="w-10 h-10 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center active:bg-gray-200 transition"><i class="fas fa-times text-lg"></i></button>
+            </div>
+        </div>
+        <div id="category-tabs" class="bg-white px-2 pb-2 flex gap-2 overflow-x-auto no-scrollbar border-b border-gray-100 shrink-0"></div>
+        <div id="library-list" class="flex-1 overflow-y-auto p-4 space-y-3 pb-20 relative">
+             <div id="lib-loading" class="hidden absolute inset-0 bg-white/80 z-10 flex items-center justify-center"><div class="loader"></div></div>
+        </div>
+        <div id="admin-controls" class="hidden p-3 bg-white border-t fixed bottom-0 w-full pb-safe z-10 flex gap-3">
+            <button onclick="openCategoryManager()" class="flex-1 py-3 bg-purple-600 text-white rounded-xl font-bold shadow-lg shadow-purple-200 active:scale-95 transition"><i class="fas fa-tags mr-1"></i> 分类管理</button>
+            <button onclick="showAddScriptModal()" class="flex-[1.5] py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition"><i class="fas fa-plus mr-1"></i> 添加新话术</button>
+        </div>
+    </div>
+
+    <div id="auth-modal" class="fixed inset-0 z-[120] hidden flex items-center justify-center bg-black/50 backdrop-blur-sm px-6">
+        <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl modal-enter">
+            <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-lg">管理验证</h3><button onclick="document.getElementById('auth-modal').classList.add('hidden')" class="text-gray-400 p-2"><i class="fas fa-times"></i></button></div>
+            <input type="password" id="admin-password" class="w-full bg-gray-100 border-none rounded-xl px-4 py-3 mb-4 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="请输入管理密码">
+            <button onclick="verifyAdmin()" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-lg shadow-blue-200 shadow-lg active:scale-95 transition">验证</button>
+        </div>
+    </div>
+
+    <div id="edit-modal" class="fixed inset-0 z-[130] hidden flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+        <div class="bg-white w-full max-w-sm rounded-2xl p-5 shadow-2xl modal-enter flex flex-col max-h-[80vh]">
+            <h3 class="font-bold text-lg mb-4" id="edit-modal-title">添加话术</h3>
+            <div class="space-y-3 overflow-y-auto flex-1">
+                <div><label class="text-xs text-gray-500 ml-1">分类</label><select id="edit-cat" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"></select></div>
+                <div><label class="text-xs text-gray-500 ml-1">客户问题 (关键词)</label><input id="edit-question" type="text" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none" placeholder="例如：怎么合作？"></div>
+                <div><label class="text-xs text-gray-500 ml-1">标准回答</label><textarea id="edit-answer" rows="5" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none resize-none" placeholder="输入标准话术..."></textarea></div>
+            </div>
+            <div class="flex gap-3 mt-4 pt-2"><button onclick="closeEditModal()" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg">取消</button><button id="save-btn" onclick="saveScript()" class="flex-1 py-2 bg-blue-600 text-white rounded-lg flex justify-center items-center">保存</button></div>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="fixed inset-0 z-[150] hidden flex items-center justify-center bg-black/50 backdrop-blur-sm px-6">
+        <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl modal-enter text-center">
+            <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500"><i class="fas fa-exclamation-triangle text-xl"></i></div>
+            <h3 class="font-bold text-lg mb-2" id="confirm-title">确定清空？</h3>
+            <p class="text-sm text-gray-500 mb-6" id="confirm-desc">此操作将删除所有记录。</p>
+            <div class="flex gap-3">
+                <button onclick="closeConfirmModal()" class="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-medium active:bg-gray-200">取消</button>
+                <button id="confirm-btn-action" class="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-200 active:bg-red-600">确认</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="category-manager-modal" class="fixed inset-0 z-[140] hidden flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+        <div class="bg-white w-full max-w-sm rounded-2xl p-5 shadow-2xl modal-enter flex flex-col max-h-[70vh]">
+            <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-lg">管理分类</h3><button onclick="closeCategoryManager()" class="text-gray-400 p-1"><i class="fas fa-times"></i></button></div>
+            <p class="text-xs text-gray-400 mb-2">点击笔修改，点击垃圾桶删除</p>
+            <div id="category-list" class="flex-1 overflow-y-auto space-y-2 mb-4 p-1"></div>
+            <div class="flex gap-2 pt-2 border-t">
+                <input type="text" id="new-cat-input" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none" placeholder="输入新分类名称">
+                <button onclick="addCategory()" class="bg-purple-600 text-white px-4 rounded-lg font-bold text-sm shadow-md active:bg-purple-700">添加</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 text-white px-4 py-2 rounded-lg text-sm hidden z-[300] transition-opacity"></div>
+
+    <script>
+        // ================= Supabase 配置 =================
+        const SUPABASE_URL = 'https://xxmiobkgabxxhbuacutj.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4bWlvYmtnYWJ4eGhidWFjdXRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM5NDg5MzMsImV4cCI6MjA3OTUyNDkzM30.sL-e2bRHhqH-GDjINDwdCVeLroLvQpMvn26sEvoKmFo';
+        
+        let supabase;
+        let isCloudReady = false;
+
+        // ================= 数据初始化 =================
+        const defaultScripts = [{ id: 1, cat: '业务介绍', q: '测试问题', a: '欢迎使用星链智能助手，数据库连接成功！' }];
+        const defaultCategories = ['业务介绍', '合作条件', '权益政策'];
+
+        let scripts = [];
+        let categories = [];
+        let currentChat = JSON.parse(localStorage.getItem('sl_current_chat')) || [];
+        let historyChats = JSON.parse(localStorage.getItem('sl_history')) || [];
+        
+        let isAdmin = false;
+        let currentFilter = 'all';
+
+        // ================= 启动逻辑 =================
+        document.addEventListener('DOMContentLoaded', () => {
+            renderChat(); 
+            initSupabase();
+        });
+
+        // ================= Supabase 核心逻辑 =================
+        function initSupabase() {
+            try {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                isCloudReady = true;
+                document.getElementById('status-text').innerHTML = '<i class="fas fa-check-circle text-green-500"></i> 云端已就绪';
+                syncData(); 
+            } catch (e) {
+                console.error("Supabase init error:", e);
+                document.getElementById('status-text').innerHTML = '<i class="fas fa-exclamation-circle text-red-500"></i> 连接失败';
+            }
+        }
+
+        async function syncData() {
+            if (!isCloudReady) return;
+            document.getElementById('lib-loading').classList.remove('hidden');
+            
+            try {
+                const { data: catData, error: catError } = await supabase
+                    .from('categories')
+                    .select('*')
+                    .order('created_at', { ascending: true });
+                
+                if (!catError && catData) {
+                    categories = catData.map(c => c.name);
+                    if (categories.length === 0) categories = defaultCategories; 
+                }
+
+                const { data: scriptData, error: scriptError } = await supabase
+                    .from('scripts')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (!scriptError && scriptData) {
+                    scripts = scriptData.map(s => ({ 
+                        id: s.id, 
+                        cat: s.category, 
+                        q: s.question,   
+                        a: s.answer      
+                    }));
+                }
+
+                if(!document.getElementById('library-modal').classList.contains('hidden')) { 
+                    renderCategoryTabs(); 
+                    filterLibrary(currentFilter); 
+                    if(!document.getElementById('category-manager-modal').classList.contains('hidden')) {
+                        renderCategoryList();
+                    }
+                }
+                showToast('数据已同步');
+
+            } catch (error) {
+                console.error("Sync Error:", error);
+                showToast('同步出错，请检查网络');
+            } finally { 
+                document.getElementById('lib-loading').classList.add('hidden'); 
+            }
+        }
+
+        // ================= 聊天核心功能 =================
+        function findBestMatch(question) {
+            if (!question.trim()) return null;
+            let bestMatch = null, maxScore = 0;
+            const sourceScripts = scripts.length > 0 ? scripts : defaultScripts;
+            sourceScripts.forEach(script => {
+                let score = 0;
+                const qChars = question.replace(/[？?,\.\s]/g, ''), sChars = (script.q || '').replace(/[？?,\.\s]/g, '');
+                if (sChars.includes(qChars)) score += 5;
+                if (qChars.includes(sChars)) score += 5;
+                for(let char of qChars) if(sChars.includes(char)) score++;
+                if (score > maxScore) { maxScore = score; bestMatch = script; }
+            });
+            return maxScore > 1 ? bestMatch : null;
+        }
+
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        const emptyState = document.getElementById('empty-state');
+
+        function renderChat() {
+            chatContainer.innerHTML = '';
+            if (currentChat.length === 0) { chatContainer.appendChild(emptyState); return; }
+            currentChat.forEach(msg => {
+                const div = document.createElement('div');
+                div.className = `flex w-full ${msg.type === 'user' ? 'justify-end' : 'justify-start'} message-enter mb-4`;
+                if (msg.type === 'user') {
+                    div.innerHTML = `<div class="bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-[85%] shadow-md text-sm break-words">${msg.text}</div>`;
+                } else {
+                    div.innerHTML = `<div class="flex flex-col gap-1 max-w-[85%]"><div class="bg-white text-gray-800 px-4 py-2.5 rounded-2xl rounded-tl-sm shadow-sm text-sm border border-gray-100 relative group break-words">${msg.text}</div><button onclick="copyText('${msg.text.replace(/'/g, "\\'")}')" class="self-start text-[10px] text-blue-500 bg-blue-50 px-2 py-1 rounded-full flex items-center gap-1 active:bg-blue-100 transition"><i class="far fa-copy"></i> 一键复制</button></div>`;
+                }
+                chatContainer.appendChild(div);
+            });
+            setTimeout(() => chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' }), 50);
+        }
+
+        function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text) return;
+            currentChat.push({ type: 'user', text: text, time: Date.now() });
+            userInput.value = ''; userInput.style.height = 'auto';
+            renderChat(); 
+            localStorage.setItem('sl_current_chat', JSON.stringify(currentChat));
+            setTimeout(() => {
+                const match = findBestMatch(text);
+                let replyText = match ? match.a : "抱歉，暂未找到匹配的官方话术。请尝试更换关键词。";
+                currentChat.push({ type: 'bot', text: replyText, time: Date.now() });
+                renderChat(); 
+                localStorage.setItem('sl_current_chat', JSON.stringify(currentChat));
+            }, 400);
+        }
+        userInput.addEventListener('input', function() { this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px'; });
+
+        // ================= CRUD 操作 =================
+        async function addCategory() {
+            const input = document.getElementById('new-cat-input'); 
+            const name = input.value.trim();
+            if(!name) return;
+            if(categories.includes(name)) { alert('分类已存在'); return; }
+            input.value = '添加中...';
+            try {
+                const { error } = await supabase.from('categories').insert([{ name: name }]);
+                if (error) throw error;
+                await syncData();
+                input.value = '';
+                showToast('分类添加成功');
+                renderCategoryList(); 
+            } catch(e) { console.error(e); alert('添加失败: ' + e.message); input.value = ''; }
+        }
+
+        async function deleteCategory(name) {
+            if (!confirm(`确定要删除分类“${name}”吗？\n该分类下的话术将变为无分类状态。`)) return;
+            showToast("正在删除...");
+            try {
+                const { error } = await supabase.from('categories').delete().eq('name', name);
+                if (error) throw error;
+                await syncData();
+                renderCategoryList();
+                showToast("删除成功");
+            } catch (e) {
+                console.error(e);
+                alert("删除失败: " + e.message);
+            }
+        }
+
+        async function renameCategory(oldName) {
+            const newName = prompt("请输入新的分类名称:", oldName);
+            if (!newName || newName === oldName) return;
+            if (categories.includes(newName)) { alert("该分类名称已存在"); return; }
+            showToast("正在重命名...");
+            try {
+                const { error: catError } = await supabase.from('categories').update({ name: newName }).eq('name', oldName);
+                if(catError) throw catError;
+                const { error: scriptError } = await supabase.from('scripts').update({ category: newName }).eq('category', oldName);
+                if(scriptError) throw scriptError;
+                await syncData();
+                renderCategoryList();
+                showToast("修改成功");
+            } catch (e) {
+                console.error(e);
+                alert("修改失败: " + e.message);
+            }
+        }
+        
+        async function saveScript() {
+            const cat = document.getElementById('edit-cat').value; 
+            const q = document.getElementById('edit-question').value.trim(); 
+            const a = document.getElementById('edit-answer').value.trim();
+            if (!q || !a) { alert('请填写完整'); return; }
+            document.getElementById('save-btn').innerText = '保存中...';
+            try {
+                const payload = { category: cat, question: q, answer: a };
+                if(editingId) { 
+                    const { error } = await supabase.from('scripts').update(payload).eq('id', editingId);
+                    if (error) throw error;
+                } else {
+                    const { error } = await supabase.from('scripts').insert([payload]);
+                    if (error) throw error;
+                }
+                await syncData();
+                closeEditModal();
+                showToast('保存成功');
+            } catch(e) { alert('保存失败: ' + e.message); } finally { document.getElementById('save-btn').innerText = '保存'; }
+        }
+
+        async function deleteScript(id) {
+            if(!confirm('确定删除此话术？')) return;
+            try {
+                const { error } = await supabase.from('scripts').delete().eq('id', id);
+                if(error) throw error;
+                await syncData();
+                showToast('已删除');
+            } catch(e) { alert('删除失败'); }
+        }
+
+        // ================= UI 辅助函数 =================
+        async function pasteClipboard() { userInput.focus(); try { const text = await navigator.clipboard.readText(); if (text) { userInput.value = text; userInput.style.height = 'auto'; userInput.style.height = (userInput.scrollHeight) + 'px'; showToast('已粘贴'); } } catch (err) { showToast('请点击键盘上的“粘贴”'); } }
+        function copyText(text) { const textarea = document.createElement('textarea'); textarea.value = text; document.body.appendChild(textarea); textarea.select(); try { document.execCommand('copy'); showToast('话术已复制'); } catch (err) { alert('复制失败'); } document.body.removeChild(textarea); }
+        function showToast(msg) { const toast = document.getElementById('toast'); toast.innerText = msg; toast.classList.remove('hidden'); toast.classList.add('opacity-100'); setTimeout(() => { toast.classList.remove('opacity-100'); toast.classList.add('hidden'); }, 2000); }
+        function startNewChat() { if (currentChat.length > 0) { const preview = currentChat[0].text.substring(0, 12) + '...'; historyChats.unshift({ id: Date.now(), title: preview, date: new Date().toLocaleDateString(), msgs: [...currentChat] }); localStorage.setItem('sl_history', JSON.stringify(historyChats)); } currentChat = []; localStorage.setItem('sl_current_chat', JSON.stringify(currentChat)); renderChat(); showToast('新对话已开启'); }
+        function openHistory() { document.getElementById('history-modal').classList.remove('hidden'); setTimeout(() => document.getElementById('history-panel').classList.remove('-translate-x-full'), 10); renderHistoryList(); }
+        function closeHistory() { document.getElementById('history-panel').classList.add('-translate-x-full'); setTimeout(() => document.getElementById('history-modal').classList.add('hidden'), 300); }
+        function renderHistoryList() { const list = document.getElementById('history-list'); list.innerHTML = ''; if(historyChats.length === 0) { list.innerHTML = '<p class="text-center text-gray-400 text-sm mt-10">暂无历史记录</p>'; return; } historyChats.forEach((chat, index) => { const item = document.createElement('div'); item.className = 'bg-white p-3 rounded-lg shadow-sm border border-gray-100 active:bg-gray-50 mb-2'; item.onclick = () => loadHistory(index); item.innerHTML = `<div class="flex justify-between items-center mb-1"><span class="font-bold text-sm text-gray-700">${chat.title}</span><span class="text-xs text-gray-400">${chat.date}</span></div><p class="text-xs text-gray-400 truncate">${chat.msgs.length} 条对话</p>`; list.appendChild(item); }); }
+        function loadHistory(index) { currentChat = [...historyChats[index].msgs]; localStorage.setItem('sl_current_chat', JSON.stringify(currentChat)); renderChat(); closeHistory(); }
+        function askClearHistory() { document.getElementById('confirm-title').innerText = '确定清空？'; document.getElementById('confirm-desc').innerText = '此操作将删除所有历史对话记录。'; document.getElementById('confirm-btn-action').onclick = performClearHistory; document.getElementById('confirm-modal').classList.remove('hidden'); }
+        function performClearHistory() { historyChats = []; localStorage.setItem('sl_history', JSON.stringify(historyChats)); renderHistoryList(); closeConfirmModal(); showToast('已清空'); }
+        function closeConfirmModal() { document.getElementById('confirm-modal').classList.add('hidden'); }
+        function openLibrary() { document.getElementById('library-modal').classList.remove('hidden'); document.getElementById('library-modal').classList.add('flex'); renderCategoryTabs(); filterLibrary(currentFilter); }
+        function closeLibrary() { document.getElementById('library-modal').classList.add('hidden'); document.getElementById('library-modal').classList.remove('flex'); }
+        function renderCategoryTabs() { const container = document.getElementById('category-tabs'); let html = `<button onclick="filterLibrary('all')" class="tab-btn active px-4 py-1.5 rounded-full text-sm font-medium ${currentFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'} whitespace-nowrap" data-cat="all">全部</button>`; categories.forEach(cat => { const isActive = currentFilter === cat; html += `<button onclick="filterLibrary('${cat}')" class="tab-btn px-4 py-1.5 rounded-full text-sm font-medium ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'} whitespace-nowrap" data-cat="${cat}">${cat}</button>`; }); container.innerHTML = html; }
+        function filterLibrary(cat) { currentFilter = cat; renderCategoryTabs(); const list = document.getElementById('library-list'); list.innerHTML = '<div id="lib-loading" class="hidden absolute inset-0 bg-white/80 z-10 flex items-center justify-center"><div class="loader"></div></div>'; const filtered = cat === 'all' ? scripts : scripts.filter(s => s.cat === cat); filtered.forEach(item => { const card = document.createElement('div'); card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative'; let adminBtns = isAdmin ? `<div class="absolute top-3 right-3 flex gap-2"><button onclick="editScript(${item.id})" class="text-blue-500 text-xs bg-blue-50 p-1.5 rounded"><i class="fas fa-edit"></i></button><button onclick="deleteScript(${item.id})" class="text-red-500 text-xs bg-red-50 p-1.5 rounded"><i class="fas fa-trash"></i></button></div>` : ''; card.innerHTML = `<span class="inline-block px-2 py-0.5 bg-blue-50 text-blue-600 text-[10px] rounded-md mb-2">${item.cat}</span>${adminBtns}<h4 class="font-bold text-gray-800 mb-1 text-sm">${item.q}</h4><p class="text-xs text-gray-500 leading-relaxed mb-3">${item.a}</p><button onclick="copyText('${item.a.replace(/'/g, "\\'")}')" class="w-full py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 flex items-center justify-center gap-1 active:bg-gray-50"><i class="far fa-copy"></i> 复制话术</button>`; list.appendChild(card); }); }
+        function checkAdmin() { if (isAdmin) { isAdmin = false; document.getElementById('admin-btn').innerText = '管理'; document.getElementById('admin-controls').classList.add('hidden'); filterLibrary('all'); showToast('已退出管理模式'); } else { document.getElementById('auth-modal').classList.remove('hidden'); } }
+        
+        // ⚠️ 在这里修改管理密码
+        function verifyAdmin() { 
+            const inputPwd = document.getElementById('admin-password').value;
+            // 将 '1234' 改成你想要的任何密码，比如 '8888'
+            if (inputPwd === '1234') { 
+                isAdmin = true; 
+                document.getElementById('auth-modal').classList.add('hidden'); 
+                document.getElementById('admin-btn').innerText = '退出'; 
+                document.getElementById('admin-controls').classList.remove('hidden'); 
+                document.getElementById('admin-password').value = ''; 
+                filterLibrary('all'); 
+                showToast('验证成功'); 
+            } else { 
+                alert('密码错误'); 
+            } 
+        }
+        
+        function openCategoryManager() { document.getElementById('category-manager-modal').classList.remove('hidden'); renderCategoryList(); }
+        function closeCategoryManager() { document.getElementById('category-manager-modal').classList.add('hidden'); renderCategoryTabs(); filterLibrary(currentFilter); }
+        
+        function renderCategoryList() { 
+            const list = document.getElementById('category-list'); 
+            list.innerHTML = ''; 
+            categories.forEach(cat => { 
+                const div = document.createElement('div'); 
+                div.className = 'flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100 mb-2'; 
+                div.innerHTML = `
+                    <span class="text-sm font-medium text-gray-700">${cat}</span>
+                    <div class="flex gap-2">
+                        <button onclick="renameCategory('${cat}')" class="text-blue-500 text-xs bg-blue-50 p-2 rounded hover:bg-blue-100"><i class="fas fa-edit"></i></button>
+                        <button onclick="deleteCategory('${cat}')" class="text-red-500 text-xs bg-red-50 p-2 rounded hover:bg-red-100"><i class="fas fa-trash"></i></button>
+                    </div>`; 
+                list.appendChild(div); 
+            }); 
+        }
+
+        let editingId = null;
+        function showAddScriptModal() { editingId = null; document.getElementById('edit-modal-title').innerText = '添加新话术'; document.getElementById('edit-question').value = ''; document.getElementById('edit-answer').value = ''; const select = document.getElementById('edit-cat'); select.innerHTML = ''; categories.forEach(cat => { const opt = document.createElement('option'); opt.value = cat; opt.innerText = cat; select.appendChild(opt); }); document.getElementById('edit-modal').classList.remove('hidden'); }
+        function editScript(id) { editingId = id; const item = scripts.find(s => s.id === id); document.getElementById('edit-modal-title').innerText = '编辑话术'; const select = document.getElementById('edit-cat'); select.innerHTML = ''; categories.forEach(cat => { const opt = document.createElement('option'); opt.value = cat; opt.innerText = cat; if(cat === item.cat) opt.selected = true; select.appendChild(opt); }); document.getElementById('edit-question').value = item.q; document.getElementById('edit-answer').value = item.a; document.getElementById('edit-modal').classList.remove('hidden'); }
+        function closeEditModal() { document.getElementById('edit-modal').classList.add('hidden'); }
+    </script>
+</body>
+</html>
